@@ -12,8 +12,6 @@ public partial class LetterWheel : Control
     public delegate void WordSubmittedEventHandler(string word);
 
     // ── Styling ────────────────────────────────────────────
-    private const float LetterRadius = 42f;
-    private const float FontSize = 36f;
     private static readonly Color LetterBg = new(0.24f, 0.32f, 0.40f);
     private static readonly Color LetterBgSelected = new(0.95f, 0.76f, 0.22f);
     private static readonly Color LetterFg = new(1f, 1f, 1f);
@@ -29,7 +27,11 @@ public partial class LetterWheel : Control
     private Line2D _trail;
     private bool _dragging;
     private bool _enabled = true;
+
+    // Computed each time PositionLetters runs
     private float _wheelRadius;
+    private float _letterRadius;   // dynamically sized
+    private int _fontSize;
     private Vector2 _center;
 
     // Represents one letter on the wheel
@@ -52,6 +54,9 @@ public partial class LetterWheel : Control
         // LetterWheel MUST receive input — Stop means it captures events
         // inside its rect instead of letting them pass through.
         MouseFilter = MouseFilterEnum.Stop;
+
+        // Re-layout when the control is resized (orientation change, etc.)
+        Resized += OnResized;
     }
 
     // ── Public API for Main.cs ─────────────────────────────
@@ -95,19 +100,75 @@ public partial class LetterWheel : Control
         CallDeferred(MethodName.PositionLetters);
     }
 
+    private void OnResized()
+    {
+        if (_letters.Length == 0) return;
+        // Reposition existing letters to match the new size
+        RebuildWheel();
+    }
+
+    private void RebuildWheel()
+    {
+        foreach (var btn in _buttons)
+        {
+            btn.Container.QueueFree();
+        }
+        _buttons.Clear();
+        _trail.ClearPoints();
+        PositionLetters();
+    }
+
     private void PositionLetters()
     {
         var size = Size;
+        if (size.X < 1 || size.Y < 1) return; // not laid out yet
+
         _center = new Vector2(size.X / 2f, size.Y / 2f);
 
-        // Wheel radius: fit inside the container with padding
-        _wheelRadius = Mathf.Min(size.X, size.Y) * 0.36f;
-
         int count = _letters.Length;
+        if (count == 0) return;
+
+        // ── Compute wheel radius to fit inside the control ──
+        // Leave a margin for the letter discs themselves.
+        // Strategy:
+        //   1. The usable square is min(width, height)
+        //   2. The wheel circle + letter discs must fit inside that
+        //   3. Arc spacing between adjacent letters limits disc size
+        float fitDim = Mathf.Min(size.X, size.Y);
+
+        // Max letter disc radius from arc spacing:
+        //   arc distance = 2 * PI * R / N
+        //   disc diameter < arc distance  →  discRadius < PI * R / N
+        // We also need:  R + discRadius ≤ fitDim/2 - margin
+        //   R + PI*R/N ≤ fitDim/2 - margin
+        //   R * (1 + PI/N) ≤ fitDim/2 - margin
+        //   R ≤ (fitDim/2 - margin) / (1 + PI/N)
+        float margin = fitDim * 0.05f; // 5% margin on each side
+        float maxR = (fitDim / 2f - margin) / (1f + Mathf.Pi / count);
+
+        _wheelRadius = maxR;
+        _letterRadius = Mathf.Pi * _wheelRadius / count;
+
+        // Clamp letter radius to a sensible range
+        _letterRadius = Mathf.Clamp(_letterRadius, 16f, 52f);
+        _fontSize = Mathf.Clamp((int)(_letterRadius * 0.8f), 12, 42);
+
+        // Verify the whole circle fits: center ± (wheelRadius + letterRadius) ≤ size/2
+        float totalExtent = _wheelRadius + _letterRadius;
+        if (totalExtent > size.X / 2f - 4f || totalExtent > size.Y / 2f - 4f)
+        {
+            // Shrink wheel radius so it fits
+            _wheelRadius = Mathf.Min(size.X / 2f, size.Y / 2f) - _letterRadius - 8f;
+            _wheelRadius = Mathf.Max(_wheelRadius, 40f);
+        }
+
+        GD.Print($"Wheel layout: size={size}, center={_center}, wheelR={_wheelRadius:F0}, letterR={_letterRadius:F0}, fontSize={_fontSize}");
+
         float angleStep = Mathf.Tau / count;
 
         for (int i = 0; i < count; i++)
         {
+            // Start at top (-PI/2), go clockwise
             float angle = -Mathf.Pi / 2f + i * angleStep;
             float x = _center.X + Mathf.Cos(angle) * _wheelRadius;
             float y = _center.Y + Mathf.Sin(angle) * _wheelRadius;
@@ -116,51 +177,51 @@ public partial class LetterWheel : Control
             _buttons.Add(btn);
         }
 
-        // Redraw the background arc now that _center/_wheelRadius are set
+        // Redraw the background arc
         QueueRedraw();
     }
 
     private LetterButton CreateLetterButton(char letter, int index, Vector2 centerPos)
     {
+        float d = _letterRadius * 2f; // diameter
+
         // Container for positioning — MUST NOT consume input
         var container = new Control
         {
-            Position = new Vector2(centerPos.X - LetterRadius, centerPos.Y - LetterRadius),
-            Size = new Vector2(LetterRadius * 2, LetterRadius * 2),
-            MouseFilter = MouseFilterEnum.Ignore   // ← FIX: pass input through
+            Position = new Vector2(centerPos.X - _letterRadius, centerPos.Y - _letterRadius),
+            Size = new Vector2(d, d),
+            MouseFilter = MouseFilterEnum.Ignore
         };
 
         // Rounded panel as visual background
         var panel = new Panel
         {
             Position = Vector2.Zero,
-            Size = new Vector2(LetterRadius * 2, LetterRadius * 2),
-            MouseFilter = MouseFilterEnum.Ignore   // ← FIX: pass input through
+            Size = new Vector2(d, d),
+            MouseFilter = MouseFilterEnum.Ignore
         };
         var panelStyle = new StyleBoxFlat
         {
             BgColor = LetterBg,
-            CornerRadiusTopLeft = (int)LetterRadius,
-            CornerRadiusTopRight = (int)LetterRadius,
-            CornerRadiusBottomLeft = (int)LetterRadius,
-            CornerRadiusBottomRight = (int)LetterRadius
+            CornerRadiusTopLeft = (int)_letterRadius,
+            CornerRadiusTopRight = (int)_letterRadius,
+            CornerRadiusBottomLeft = (int)_letterRadius,
+            CornerRadiusBottomRight = (int)_letterRadius
         };
         panel.AddThemeStyleboxOverride("panel", panelStyle);
 
         var label = new Label
         {
             Position = Vector2.Zero,
-            Size = new Vector2(LetterRadius * 2, LetterRadius * 2),
+            Size = new Vector2(d, d),
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
             Text = letter.ToString(),
-            MouseFilter = MouseFilterEnum.Ignore   // ← FIX: pass input through
+            MouseFilter = MouseFilterEnum.Ignore
         };
-        label.AddThemeFontSizeOverride("font_size", (int)FontSize);
+        label.AddThemeFontSizeOverride("font_size", _fontSize);
         label.AddThemeColorOverride("font_color", LetterFg);
-        // Make label background transparent
-        var labelStyle = new StyleBoxEmpty();
-        label.AddThemeStyleboxOverride("normal", labelStyle);
+        label.AddThemeStyleboxOverride("normal", new StyleBoxEmpty());
 
         container.AddChild(panel);
         container.AddChild(label);
@@ -178,13 +239,10 @@ public partial class LetterWheel : Control
     }
 
     // ── Input handling ─────────────────────────────────────
-    // All drag logic lives here in the parent LetterWheel.
-    // Children have MouseFilter=Ignore so they never intercept.
     public override void _GuiInput(InputEvent ev)
     {
         if (!_enabled) return;
 
-        // Handle both mouse and touch
         if (ev is InputEventMouseButton mb)
         {
             if (mb.ButtonIndex == MouseButton.Left)
@@ -192,7 +250,7 @@ public partial class LetterWheel : Control
                 if (mb.Pressed)
                 {
                     StartDrag(mb.Position);
-                    AcceptEvent();   // consume so nothing else gets it
+                    AcceptEvent();
                 }
                 else
                 {
@@ -262,7 +320,6 @@ public partial class LetterWheel : Control
         if (!_dragging) return;
         _dragging = false;
 
-        // Build the word from selected letters
         string word = new string(_selectedIndices.Select(i => _buttons[i].Letter).ToArray());
 
         if (word.Length > 0)
@@ -271,7 +328,6 @@ public partial class LetterWheel : Control
             EmitSignal(SignalName.WordSubmitted, word);
         }
 
-        // Brief delay, then clear selection
         var tween = CreateTween();
         tween.TweenInterval(0.15);
         tween.TweenCallback(Callable.From(ClearSelection));
@@ -311,7 +367,6 @@ public partial class LetterWheel : Control
         {
             _trail.AddPoint(_buttons[idx].Center);
         }
-        // Add the current finger/mouse position as final point
         if (_dragging)
         {
             _trail.AddPoint(currentPos);
@@ -319,13 +374,10 @@ public partial class LetterWheel : Control
     }
 
     // ── Hit testing ────────────────────────────────────────
-    // Check distance from each letter center. Accept if within
-    // the letter circle radius (with some forgiveness) AND within
-    // a reasonable band of the wheel radius.
     private int HitTestLetter(Vector2 pos)
     {
-        float hitRadius = LetterRadius * 1.3f; // slightly forgiving per-letter
-        float maxDist = _wheelRadius * 1.4f;   // reject taps way outside the wheel
+        float hitRadius = _letterRadius * 1.3f;
+        float maxDist = _wheelRadius * 1.4f;
 
         float distFromCenter = pos.DistanceTo(_center);
         if (distFromCenter > maxDist)
@@ -365,7 +417,6 @@ public partial class LetterWheel : Control
     public override void _Draw()
     {
         if (_buttons.Count == 0) return;
-        // Draw a subtle circle behind the letters
-        DrawArc(_center, _wheelRadius + LetterRadius + 10f, 0f, Mathf.Tau, 64, WheelCircleColor, 3f);
+        DrawArc(_center, _wheelRadius + _letterRadius + 10f, 0f, Mathf.Tau, 64, WheelCircleColor, 3f);
     }
 }

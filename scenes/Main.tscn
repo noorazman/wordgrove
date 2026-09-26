@@ -25,13 +25,12 @@ color = Color(0.118, 0.169, 0.212, 1)
 [node name="ThemeLabel" type="Label" parent="."]
 layout_mode = 1
 mouse_filter = 2
-anchors_preset = 5
-anchor_left = 0.5
-anchor_right = 0.5
-offset_left = -200.0
-offset_top = 40.0
-offset_right = 200.0
-offset_bottom = 120.0
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 0.08
+grow_horizontal = 2
+grow_vertical = 2
 horizontal_alignment = 1
 vertical_alignment = 1
 text = "ANIMALS"
@@ -42,14 +41,16 @@ mouse_filter = 2
 anchor_left = 0.05
 anchor_top = 0.08
 anchor_right = 0.95
-anchor_bottom = 0.52
+anchor_bottom = 0.55
 grow_horizontal = 2
 grow_vertical = 2
+alignment = 1
 
 [node name="WheelArea" type="Control" parent="."]
 layout_mode = 1
 mouse_filter = 2
-anchor_top = 0.55
+anchor_left = 0.0
+anchor_top = 0.58
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
@@ -57,7 +58,8 @@ grow_vertical = 2
 
 [node name="LetterWheel" type="Control" parent="WheelArea"]
 layout_mode = 1
-anchors_preset = 15
+anchor_left = 0.0
+anchor_top = 0.0
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2

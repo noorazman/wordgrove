@@ -99,7 +99,8 @@ alignment = 1
 layout_mode = 2
 size_flags_horizontal = 3
 custom_minimum_size = Vector2(160, 80)
-text = "Hint (20 🪙)"
+text = "HINT
+(20)"
 
 [node name="Spacer1" type="Control" parent="PowerUpBar"]
 layout_mode = 2

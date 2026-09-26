@@ -354,7 +354,7 @@ public partial class Main : Control
         _shuffleButton.Disabled = ProgressManager.Coins < ShuffleCost || !_levelActive;
         _revealButton.Disabled = ProgressManager.Coins < RevealCost || !_levelActive;
 
-        _hintButton.Text = $"Hint ({HintCost} 🪙)";
+        _hintButton.Text = $"HINT\n({HintCost})";
         _shuffleButton.Text = $"SHUFFLE\n({ShuffleCost})";
         _revealButton.Text = $"REVEAL\n({RevealCost})";
     }

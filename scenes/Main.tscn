@@ -1,4 +1,7 @@
-[gd_scene format=3 uid="uid://placeholder_main"]
+[gd_scene load_steps=3 format=3 uid="uid://placeholder_main"]
+
+[ext_resource type="Script" path="res://scripts/Main.cs" id="1"]
+[ext_resource type="Script" path="res://scripts/LetterWheel.cs" id="2"]
 
 [node name="Main" type="Control"]
 layout_mode = 3
@@ -7,3 +10,84 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+script = ExtResource("1")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.118, 0.169, 0.212, 1)
+
+[node name="ThemeLabel" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -200.0
+offset_top = 40.0
+offset_right = 200.0
+offset_bottom = 120.0
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "ANIMALS"
+
+[node name="GridArea" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchor_left = 0.05
+anchor_top = 0.08
+anchor_right = 0.95
+anchor_bottom = 0.52
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="WheelArea" type="Control" parent="."]
+layout_mode = 1
+anchor_top = 0.55
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="LetterWheel" type="Control" parent="WheelArea"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("2")
+
+[node name="Trail" type="Line2D" parent="WheelArea/LetterWheel"]
+width = 8.0
+default_color = Color(0.949, 0.761, 0.224, 0.7)
+joint_mode = 1
+begin_cap_mode = 1
+end_cap_mode = 1
+
+[node name="CompletionOverlay" type="ColorRect" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.0, 0.0, 0.0, 0.7)
+
+[node name="CompleteLabel" type="Label" parent="CompletionOverlay"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -300.0
+offset_top = -60.0
+offset_right = 300.0
+offset_bottom = 60.0
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "Level Complete!"

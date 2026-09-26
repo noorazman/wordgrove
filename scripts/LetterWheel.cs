@@ -129,36 +129,28 @@ public partial class LetterWheel : Control
         if (count == 0) return;
 
         // ── Compute wheel radius to fit inside the control ──
-        // Leave a margin for the letter discs themselves.
-        // Strategy:
-        //   1. The usable square is min(width, height)
-        //   2. The wheel circle + letter discs must fit inside that
-        //   3. Arc spacing between adjacent letters limits disc size
+        // Use the smaller dimension so the wheel is always fully visible,
+        // and cap the absolute size so it stays reasonable on large screens.
         float fitDim = Mathf.Min(size.X, size.Y);
+        fitDim = Mathf.Min(fitDim, 700f); // absolute cap
 
-        // Max letter disc radius from arc spacing:
-        //   arc distance = 2 * PI * R / N
-        //   disc diameter < arc distance  →  discRadius < PI * R / N
-        // We also need:  R + discRadius ≤ fitDim/2 - margin
-        //   R + PI*R/N ≤ fitDim/2 - margin
-        //   R * (1 + PI/N) ≤ fitDim/2 - margin
-        //   R ≤ (fitDim/2 - margin) / (1 + PI/N)
-        float margin = fitDim * 0.05f; // 5% margin on each side
+        // Leave a 10% margin on each side for the letter discs
+        float margin = fitDim * 0.10f;
         float maxR = (fitDim / 2f - margin) / (1f + Mathf.Pi / count);
 
         _wheelRadius = maxR;
         _letterRadius = Mathf.Pi * _wheelRadius / count;
 
         // Clamp letter radius to a sensible range
-        _letterRadius = Mathf.Clamp(_letterRadius, 16f, 52f);
-        _fontSize = Mathf.Clamp((int)(_letterRadius * 0.8f), 12, 42);
+        _letterRadius = Mathf.Clamp(_letterRadius, 16f, 44f);
+        _fontSize = Mathf.Clamp((int)(_letterRadius * 0.8f), 12, 36);
 
-        // Verify the whole circle fits: center ± (wheelRadius + letterRadius) ≤ size/2
+        // Final safety: ensure the whole wheel fits within the control
         float totalExtent = _wheelRadius + _letterRadius;
-        if (totalExtent > size.X / 2f - 4f || totalExtent > size.Y / 2f - 4f)
+        float halfMin = Mathf.Min(size.X, size.Y) / 2f;
+        if (totalExtent > halfMin - 8f)
         {
-            // Shrink wheel radius so it fits
-            _wheelRadius = Mathf.Min(size.X / 2f, size.Y / 2f) - _letterRadius - 8f;
+            _wheelRadius = halfMin - _letterRadius - 12f;
             _wheelRadius = Mathf.Max(_wheelRadius, 40f);
         }
 

@@ -255,6 +255,41 @@ public static class LevelGenerator
     }
 
     /// <summary>
+    /// Pick an unsolved target word and return a random hidden letter index.
+    /// <paramref name="targetWords"/> is the full list of target words for the level.
+    /// <paramref name="solvedWords"/> is the set of words already fully found.
+    /// <paramref name="revealedLetters"/> maps each word to the set of letter indices
+    /// that have already been revealed (by previous hints or partial fills).
+    /// Returns null when there is nothing left to hint.
+    /// </summary>
+    public static (string word, int letterIndex)? GetHint(
+        string[] targetWords,
+        HashSet<string> solvedWords,
+        Dictionary<string, HashSet<int>> revealedLetters)
+    {
+        // Collect candidate (word, hiddenIndex) pairs across all unsolved words
+        var candidates = new List<(string word, int idx)>();
+
+        foreach (var word in targetWords)
+        {
+            if (solvedWords.Contains(word)) continue;
+
+            revealedLetters.TryGetValue(word, out var revealed);
+            revealed ??= new HashSet<int>();
+
+            for (int i = 0; i < word.Length; i++)
+            {
+                if (!revealed.Contains(i))
+                    candidates.Add((word, i));
+            }
+        }
+
+        if (candidates.Count == 0) return null;
+
+        return candidates[Rng.Next(candidates.Count)];
+    }
+
+    /// <summary>
     /// Checks if a word can be formed using letters from the pool
     /// (each pool letter can be used once).
     /// </summary>

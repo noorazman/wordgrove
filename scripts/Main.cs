@@ -27,6 +27,9 @@ public partial class Main : Control
     // ── Toast label for bonus/insufficient coins ───────────
     private Label _toastLabel;
 
+    // ── Confirmation dialog (not-enough-coins → watch ad) ──
+    private ConfirmationDialog _adConfirmDialog;
+
     // ── State ──────────────────────────────────────────────
     private readonly Dictionary<string, List<Label>> _wordSlots = new();
     private readonly HashSet<string> _foundWords = new();
@@ -34,18 +37,22 @@ public partial class Main : Control
     private double _levelStartTime;
     private bool _levelActive;
 
+    // ── Hint tracking: which letter indices are already revealed per word ──
+    private readonly Dictionary<string, HashSet<int>> _revealedLetters = new();
+
     // ── Styling constants ──────────────────────────────────
     private const int SlotSize = 64;
     private const int SlotGap = 8;
     private const int RowGap = 12;
     private static readonly Color SlotEmpty = new(0.22f, 0.28f, 0.34f);
     private static readonly Color SlotFilled = new(0.18f, 0.56f, 0.34f);
+    private static readonly Color SlotHint = new(0.40f, 0.50f, 0.34f);
     private static readonly Color SlotText = new(1f, 1f, 1f);
     private static readonly Color ThemeColor = new(0.95f, 0.76f, 0.22f);
     private static readonly Color BonusFlashColor = new(0.55f, 0.27f, 0.95f);
 
     // ── Power-up costs ─────────────────────────────────────
-    private const int HintCost = 10;
+    private const int HintCost = 20;
     private const int ShuffleCost = 5;
     private const int RevealCost = 30;
 
@@ -70,6 +77,19 @@ public partial class Main : Control
         // Toast
         _toastLabel = GetNode<Label>("ToastLabel");
         _toastLabel.Visible = false;
+
+        // ── Build the "watch-ad" confirmation dialog at runtime ──
+        _adConfirmDialog = new ConfirmationDialog
+        {
+            Title = "Not Enough Coins",
+            DialogText = "Not enough coins. Watch an ad for a free hint?",
+            OkButtonText = "Watch Ad",
+            CancelButtonText = "Cancel",
+            Exclusive = true
+        };
+        AddChild(_adConfirmDialog);
+        _adConfirmDialog.Confirmed += OnWatchAdConfirmed;
+        // No action needed on Cancel — dialog just closes.
 
         // Connect signals
         _letterWheel.WordSubmitted += OnWordSubmitted;
@@ -136,6 +156,7 @@ public partial class Main : Control
         _completionOverlay.Visible = false;
         _foundWords.Clear();
         _foundBonusWords.Clear();
+        _revealedLetters.Clear();
         _levelStartTime = Time.GetUnixTimeFromSystem();
         _levelActive = true;
     }
@@ -329,11 +350,11 @@ public partial class Main : Control
     // ──────────────────────────────────────────────────────────
     private void UpdatePowerUpButtons()
     {
-        _hintButton.Disabled = ProgressManager.Coins < HintCost || !_levelActive;
+        _hintButton.Disabled = !_levelActive;
         _shuffleButton.Disabled = ProgressManager.Coins < ShuffleCost || !_levelActive;
         _revealButton.Disabled = ProgressManager.Coins < RevealCost || !_levelActive;
 
-        _hintButton.Text = $"HINT\n({HintCost})";
+        _hintButton.Text = $"Hint ({HintCost} 🪙)";
         _shuffleButton.Text = $"SHUFFLE\n({ShuffleCost})";
         _revealButton.Text = $"REVEAL\n({RevealCost})";
     }
@@ -342,46 +363,79 @@ public partial class Main : Control
     {
         if (!_levelActive) return;
 
-        if (!ProgressManager.SpendCoins(HintCost))
+        if (ProgressManager.Coins >= HintCost)
+        {
+            // Enough coins — spend and reveal
+            PerformHint(deductCoins: true);
+        }
+        else
+        {
+            // Not enough coins — show ad dialog
+            _adConfirmDialog.PopupCentered(new Vector2I(400, 200));
+        }
+    }
+
+    /// <summary>
+    /// Called when the player confirms "Watch Ad" in the dialog.
+    /// </summary>
+    private void OnWatchAdConfirmed()
+    {
+        AdManager.ShowRewardedAd(
+            onReward: () => PerformHint(deductCoins: false),
+            onFail: () => ShowToast("Ad not available")
+        );
+    }
+
+    /// <summary>
+    /// Core hint logic. Asks LevelGenerator for an unrevealed letter,
+    /// fills it into the grid, and plays feedback.
+    /// </summary>
+    /// <param name="deductCoins">
+    /// true when the player pays coins; false for a free (ad-rewarded) hint.
+    /// </param>
+    private void PerformHint(bool deductCoins)
+    {
+        // Ask the generator for a hint
+        var hint = LevelGenerator.GetHint(
+            _levelData.TargetWords,
+            _foundWords,
+            _revealedLetters);
+
+        if (hint == null)
+        {
+            ShowToast("No letters to reveal");
+            return;
+        }
+
+        // Deduct coins only after we know a hint is available
+        if (deductCoins && !ProgressManager.SpendCoins(HintCost))
         {
             ShowToast("Not enough coins");
             return;
         }
 
-        UpdateCoinDisplay();
+        var (word, letterIndex) = hint.Value;
 
-        // Find an unfilled slot in an unfound target word and reveal one letter
-        foreach (var word in _levelData.TargetWords)
+        // Track the revealed letter so we never hint it again
+        if (!_revealedLetters.ContainsKey(word))
+            _revealedLetters[word] = new HashSet<int>();
+        _revealedLetters[word].Add(letterIndex);
+
+        // Fill the slot in the grid
+        if (_wordSlots.TryGetValue(word, out var slots))
         {
-            if (_foundWords.Contains(word)) continue;
-            if (!_wordSlots.TryGetValue(word, out var slots)) continue;
-
-            // Find empty slots in this word
-            var emptyIndices = new List<int>();
-            for (int i = 0; i < slots.Count; i++)
-            {
-                if (string.IsNullOrEmpty(slots[i].Text))
-                    emptyIndices.Add(i);
-            }
-
-            if (emptyIndices.Count == 0) continue;
-
-            // Pick a random empty slot
-            var rng = new Random();
-            int idx = emptyIndices[rng.Next(emptyIndices.Count)];
-            slots[idx].Text = word[idx].ToString();
-            var style = (StyleBoxFlat)slots[idx].GetThemeStylebox("normal").Duplicate();
-            style.BgColor = new Color(0.40f, 0.50f, 0.34f); // hint color
-            slots[idx].AddThemeStyleboxOverride("normal", style);
-
-            ShowToast("Hint revealed!");
-            return;
+            slots[letterIndex].Text = word[letterIndex].ToString();
+            var style = (StyleBoxFlat)slots[letterIndex].GetThemeStylebox("normal").Duplicate();
+            style.BgColor = SlotHint;
+            slots[letterIndex].AddThemeStyleboxOverride("normal", style);
         }
 
-        // No empty slots found — refund
-        ProgressManager.AddCoins(HintCost);
+        // Play hint sound (if an AudioStreamPlayer named "HintSound" exists)
+        var hintSound = GetNodeOrNull<AudioStreamPlayer>("HintSound");
+        hintSound?.Play();
+
         UpdateCoinDisplay();
-        ShowToast("No slots to reveal");
+        ShowToast("Hint used!");
     }
 
     private void OnShufflePressed()

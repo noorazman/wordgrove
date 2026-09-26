@@ -1,0 +1,20 @@
+# Godot 4 + C#
+.godot/
+.mono/
+
+# Build output
+bin/
+obj/
+build/
+
+# Export artifacts
+*.apk
+*.aab
+
+# IDE
+.vs/
+.idea/
+*.user
+
+# OS
+.DS_Store

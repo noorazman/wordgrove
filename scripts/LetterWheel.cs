@@ -36,7 +36,7 @@ public partial class LetterWheel : Control
     private class LetterButton
     {
         public Label Label;
-        public ColorRect Background;
+        public Panel Panel;
         public Control Container;
         public Vector2 Center;   // centre position relative to LetterWheel
         public int Index;
@@ -48,6 +48,10 @@ public partial class LetterWheel : Control
         _trail = GetNode<Line2D>("Trail");
         _trail.Width = 8f;
         _trail.DefaultColor = TrailColor;
+
+        // LetterWheel MUST receive input — Stop means it captures events
+        // inside its rect instead of letting them pass through.
+        MouseFilter = MouseFilterEnum.Stop;
     }
 
     // ── Public API for Main.cs ─────────────────────────────
@@ -111,32 +115,27 @@ public partial class LetterWheel : Control
             var btn = CreateLetterButton(_letters[i], i, new Vector2(x, y));
             _buttons.Add(btn);
         }
+
+        // Redraw the background arc now that _center/_wheelRadius are set
+        QueueRedraw();
     }
 
     private LetterButton CreateLetterButton(char letter, int index, Vector2 centerPos)
     {
-        // Container for positioning
+        // Container for positioning — MUST NOT consume input
         var container = new Control
         {
             Position = new Vector2(centerPos.X - LetterRadius, centerPos.Y - LetterRadius),
-            Size = new Vector2(LetterRadius * 2, LetterRadius * 2)
-        };
-
-        // Circular background (approximated with rounded ColorRect)
-        var bg = new ColorRect
-        {
-            Position = Vector2.Zero,
             Size = new Vector2(LetterRadius * 2, LetterRadius * 2),
-            Color = LetterBg
+            MouseFilter = MouseFilterEnum.Ignore   // ← FIX: pass input through
         };
 
-        // Round it using a clip with a StyleBoxFlat
-        // Actually, we'll draw circles in _Draw instead.
-        // For now use a Panel with stylebox.
+        // Rounded panel as visual background
         var panel = new Panel
         {
             Position = Vector2.Zero,
-            Size = new Vector2(LetterRadius * 2, LetterRadius * 2)
+            Size = new Vector2(LetterRadius * 2, LetterRadius * 2),
+            MouseFilter = MouseFilterEnum.Ignore   // ← FIX: pass input through
         };
         var panelStyle = new StyleBoxFlat
         {
@@ -154,7 +153,8 @@ public partial class LetterWheel : Control
             Size = new Vector2(LetterRadius * 2, LetterRadius * 2),
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
-            Text = letter.ToString()
+            Text = letter.ToString(),
+            MouseFilter = MouseFilterEnum.Ignore   // ← FIX: pass input through
         };
         label.AddThemeFontSizeOverride("font_size", (int)FontSize);
         label.AddThemeColorOverride("font_color", LetterFg);
@@ -169,7 +169,7 @@ public partial class LetterWheel : Control
         return new LetterButton
         {
             Label = label,
-            Background = bg,
+            Panel = panel,
             Container = container,
             Center = centerPos,
             Index = index,
@@ -178,6 +178,8 @@ public partial class LetterWheel : Control
     }
 
     // ── Input handling ─────────────────────────────────────
+    // All drag logic lives here in the parent LetterWheel.
+    // Children have MouseFilter=Ignore so they never intercept.
     public override void _GuiInput(InputEvent ev)
     {
         if (!_enabled) return;
@@ -188,27 +190,45 @@ public partial class LetterWheel : Control
             if (mb.ButtonIndex == MouseButton.Left)
             {
                 if (mb.Pressed)
+                {
                     StartDrag(mb.Position);
+                    AcceptEvent();   // consume so nothing else gets it
+                }
                 else
+                {
                     EndDrag();
+                    AcceptEvent();
+                }
             }
         }
         else if (ev is InputEventMouseMotion mm)
         {
             if (_dragging)
+            {
                 ContinueDrag(mm.Position);
+                AcceptEvent();
+            }
         }
         else if (ev is InputEventScreenTouch st)
         {
             if (st.Pressed)
+            {
                 StartDrag(st.Position);
+                AcceptEvent();
+            }
             else
+            {
                 EndDrag();
+                AcceptEvent();
+            }
         }
         else if (ev is InputEventScreenDrag sd)
         {
             if (_dragging)
+            {
                 ContinueDrag(sd.Position);
+                AcceptEvent();
+            }
         }
     }
 
@@ -247,6 +267,7 @@ public partial class LetterWheel : Control
 
         if (word.Length > 0)
         {
+            GD.Print($"Wheel: submitted \"{word}\"");
             EmitSignal(SignalName.WordSubmitted, word);
         }
 
@@ -260,6 +281,7 @@ public partial class LetterWheel : Control
     {
         _selectedIndices.Add(index);
         SetButtonSelected(_buttons[index], true);
+        GD.Print($"Wheel: selected '{_buttons[index].Letter}'");
     }
 
     private void ClearSelection()
@@ -275,10 +297,9 @@ public partial class LetterWheel : Control
 
     private void SetButtonSelected(LetterButton btn, bool selected)
     {
-        var panel = btn.Container.GetChild<Panel>(0);
-        var style = (StyleBoxFlat)panel.GetThemeStylebox("panel").Duplicate();
+        var style = (StyleBoxFlat)btn.Panel.GetThemeStylebox("panel").Duplicate();
         style.BgColor = selected ? LetterBgSelected : LetterBg;
-        panel.AddThemeStyleboxOverride("panel", style);
+        btn.Panel.AddThemeStyleboxOverride("panel", style);
         btn.Label.AddThemeColorOverride("font_color", selected ? LetterFgSelected : LetterFg);
     }
 
@@ -298,15 +319,31 @@ public partial class LetterWheel : Control
     }
 
     // ── Hit testing ────────────────────────────────────────
+    // Check distance from each letter center. Accept if within
+    // the letter circle radius (with some forgiveness) AND within
+    // a reasonable band of the wheel radius.
     private int HitTestLetter(Vector2 pos)
     {
-        float hitRadius = LetterRadius * 1.3f; // slightly forgiving
+        float hitRadius = LetterRadius * 1.3f; // slightly forgiving per-letter
+        float maxDist = _wheelRadius * 1.4f;   // reject taps way outside the wheel
+
+        float distFromCenter = pos.DistanceTo(_center);
+        if (distFromCenter > maxDist)
+            return -1;
+
+        int best = -1;
+        float bestDist = float.MaxValue;
+
         for (int i = 0; i < _buttons.Count; i++)
         {
-            if (pos.DistanceTo(_buttons[i].Center) <= hitRadius)
-                return i;
+            float d = pos.DistanceTo(_buttons[i].Center);
+            if (d <= hitRadius && d < bestDist)
+            {
+                bestDist = d;
+                best = i;
+            }
         }
-        return -1;
+        return best;
     }
 
     // ── Flash invalid (called externally if needed) ────────
@@ -314,10 +351,9 @@ public partial class LetterWheel : Control
     {
         foreach (var idx in _selectedIndices)
         {
-            var panel = _buttons[idx].Container.GetChild<Panel>(0);
-            var style = (StyleBoxFlat)panel.GetThemeStylebox("panel").Duplicate();
+            var style = (StyleBoxFlat)_buttons[idx].Panel.GetThemeStylebox("panel").Duplicate();
             style.BgColor = InvalidFlashColor;
-            panel.AddThemeStyleboxOverride("panel", style);
+            _buttons[idx].Panel.AddThemeStyleboxOverride("panel", style);
         }
 
         var tween = CreateTween();

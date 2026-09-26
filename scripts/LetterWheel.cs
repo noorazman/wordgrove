@@ -85,6 +85,29 @@ public partial class LetterWheel : Control
         _enabled = enabled;
     }
 
+    /// <summary>
+    /// Rearranges the letters on the wheel into a new random order
+    /// (same letters, different positions). Used by the SHUFFLE power-up.
+    /// </summary>
+    public void ShuffleLetters()
+    {
+        if (_letters.Length <= 1) return;
+
+        var rng = new Random();
+        var shuffled = (char[])_letters.Clone();
+        for (int i = shuffled.Length - 1; i > 0; i--)
+        {
+            int j = rng.Next(i + 1);
+            (shuffled[i], shuffled[j]) = (shuffled[j], shuffled[i]);
+        }
+
+        _letters = shuffled;
+        _selectedIndices.Clear();
+        _dragging = false;
+        _trail.ClearPoints();
+        BuildWheel();
+    }
+
     // ── Build the circular layout ──────────────────────────
     private void BuildWheel()
     {

@@ -154,8 +154,6 @@ public partial class LetterWheel : Control
             _wheelRadius = Mathf.Max(_wheelRadius, 40f);
         }
 
-        GD.Print($"Wheel layout: size={size}, center={_center}, wheelR={_wheelRadius:F0}, letterR={_letterRadius:F0}, fontSize={_fontSize}");
-
         float angleStep = Mathf.Tau / count;
 
         for (int i = 0; i < count; i++)
@@ -316,7 +314,6 @@ public partial class LetterWheel : Control
 
         if (word.Length > 0)
         {
-            GD.Print($"Wheel: submitted \"{word}\"");
             EmitSignal(SignalName.WordSubmitted, word);
         }
 
@@ -329,7 +326,6 @@ public partial class LetterWheel : Control
     {
         _selectedIndices.Add(index);
         SetButtonSelected(_buttons[index], true);
-        GD.Print($"Wheel: selected '{_buttons[index].Letter}'");
     }
 
     private void ClearSelection()

@@ -39,6 +39,7 @@ public partial class Main : Control
         _completionOverlay = GetNode<ColorRect>("CompletionOverlay");
 
         _letterWheel.WordSubmitted += OnWordSubmitted;
+        _completionOverlay.GuiInput += OnOverlayInput;
 
         BuildLevel();
     }
@@ -188,15 +189,15 @@ public partial class Main : Control
         }
     }
 
-    // ── Tap-to-reset when overlay is showing ───────────────
-    public override void _UnhandledInput(InputEvent ev)
+    // ── Overlay click handler: reset the level ──────────────
+    private void OnOverlayInput(InputEvent ev)
     {
-        if (!_completionOverlay.Visible) return;
-
-        if (ev is InputEventMouseButton { Pressed: true } or InputEventScreenTouch { Pressed: true })
+        if (ev is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }
+            or InputEventScreenTouch { Pressed: true })
         {
+            GD.Print("Overlay: reset triggered");
+            _completionOverlay.AcceptEvent();
             ResetLevel();
-            GetViewport().SetInputAsHandled();
         }
     }
 
@@ -225,5 +226,6 @@ public partial class Main : Control
 
         _letterWheel.Reset();
         _letterWheel.SetEnabled(true);
+        GD.Print("Level reset complete");
     }
 }

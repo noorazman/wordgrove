@@ -24,9 +24,8 @@ public partial class Main : Control
     private Button _shuffleButton;
     private Button _revealButton;
 
-    // ── Pause button (top bar) and pause overlay ───────────
-    private Button _pauseButton;
-    private ColorRect _pauseOverlay;
+    // ── Back button (top bar) ──────────────────────────────
+    private Button _backButton;
 
     // ── Toast label for bonus/insufficient coins ───────────
     private Label _toastLabel;
@@ -43,6 +42,14 @@ public partial class Main : Control
 
     // ── Hint tracking: which letter indices are already revealed per word ──
     private readonly Dictionary<string, HashSet<int>> _revealedLetters = new();
+
+    // ── Sound players ─────────────────────────────────────
+    private AudioStreamPlayer _sfxWordFound;
+    private AudioStreamPlayer _sfxBonus;
+    private AudioStreamPlayer _sfxInvalid;
+    private AudioStreamPlayer _sfxLevelComplete;
+    private AudioStreamPlayer _sfxHint;
+    private AudioStreamPlayer _sfxButton;
 
     // ── Styling constants ──────────────────────────────────
     private const int SlotSize = 64;
@@ -78,6 +85,10 @@ public partial class Main : Control
         _shuffleButton = GetNode<Button>("PowerUpBar/ShuffleButton");
         _revealButton = GetNode<Button>("PowerUpBar/RevealButton");
 
+        // Back button (top bar) — goes back to LevelSelect
+        _backButton = GetNode<Button>("TopBar/BackButton");
+        _backButton.Pressed += OnMenuPressed;
+
         // Toast
         _toastLabel = GetNode<Label>("ToastLabel");
         _toastLabel.Visible = false;
@@ -104,26 +115,18 @@ public partial class Main : Control
         nextBtn.Pressed += OnNextPressed;
         menuBtn.Pressed += OnMenuPressed;
 
-        // Pause button (top bar) and pause overlay
-        _pauseButton = GetNode<Button>("TopBar/PauseButton");
-        _pauseButton.Pressed += OnPausePressed;
-
-        _pauseOverlay = GetNode<ColorRect>("PauseOverlay");
-        _pauseOverlay.Visible = false;
-        var pausedLabel = _pauseOverlay.GetNode<Label>("VBox/PausedLabel");
-        pausedLabel.AddThemeFontSizeOverride("font_size", 56);
-        pausedLabel.AddThemeColorOverride("font_color", ThemeColor);
-        var resumeBtn = _pauseOverlay.GetNode<Button>("VBox/ResumeButton");
-        var pauseMenuBtn = _pauseOverlay.GetNode<Button>("VBox/MenuButton");
-        resumeBtn.AddThemeFontSizeOverride("font_size", 36);
-        pauseMenuBtn.AddThemeFontSizeOverride("font_size", 36);
-        resumeBtn.Pressed += OnResumePressed;
-        pauseMenuBtn.Pressed += OnMenuPressed;
-
         // Power-up signals
         _hintButton.Pressed += OnHintPressed;
         _shuffleButton.Pressed += OnShufflePressed;
         _revealButton.Pressed += OnRevealPressed;
+
+        // ── Sound effects (procedurally generated — no audio files needed) ──
+        _sfxWordFound    = CreateBeepSfx(440f, 0.08f, 0.15f); // A4 — short positive ding
+        _sfxBonus        = CreateBeepSfx(660f, 0.10f, 0.20f); // E5 — higher, bonus feel
+        _sfxInvalid      = CreateBeepSfx(180f, 0.06f, 0.12f); // low buzz — invalid
+        _sfxLevelComplete = CreateBeepSfx(528f, 0.15f, 0.40f); // C5 — longer celebratory
+        _sfxHint         = CreateBeepSfx(330f, 0.06f, 0.18f); // E4 — soft hint chime
+        _sfxButton       = CreateBeepSfx(300f, 0.04f, 0.08f); // soft click
 
         // Load progress
         ProgressManager.Load();
@@ -131,6 +134,42 @@ public partial class Main : Control
         // Start at the player's current level
         _currentLevelNumber = ProgressManager.CurrentLevel;
         StartLevel(_currentLevelNumber);
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // Procedural SFX helper
+    // Generates a simple sine-wave beep AudioStreamPlayer at runtime —
+    // no external audio files required.
+    // ──────────────────────────────────────────────────────────
+    private AudioStreamPlayer CreateBeepSfx(float frequency, float amplitude, float duration)
+    {
+        int sampleRate = 22050;
+        int sampleCount = (int)(sampleRate * duration);
+
+        var data = new byte[sampleCount * 2]; // 16-bit mono
+        for (int i = 0; i < sampleCount; i++)
+        {
+            float t = (float)i / sampleRate;
+            // Sine wave with a fast attack and exponential decay envelope
+            float envelope = Mathf.Exp(-t * (5.0f / duration));
+            float sample = Mathf.Sin(Mathf.Tau * frequency * t) * amplitude * envelope;
+            short s = (short)Mathf.Clamp(sample * 32767f, -32768f, 32767f);
+            data[i * 2]     = (byte)(s & 0xFF);
+            data[i * 2 + 1] = (byte)((s >> 8) & 0xFF);
+        }
+
+        var stream = new AudioStreamWav
+        {
+            Data = data,
+            Format = AudioStreamWav.FormatEnum.Format16Bits,
+            Stereo = false,
+            MixRate = sampleRate,
+            LoopMode = AudioStreamWav.LoopModeEnum.Disabled
+        };
+
+        var player = new AudioStreamPlayer { Stream = stream, VolumeDb = -6f };
+        AddChild(player);
+        return player;
     }
 
     // ──────────────────────────────────────────────────────────
@@ -260,6 +299,7 @@ public partial class Main : Control
         {
             _foundWords.Add(word);
             FillSlots(word, slots);
+            _sfxWordFound?.Play();
             CheckCompletion();
             return;
         }
@@ -273,13 +313,13 @@ public partial class Main : Control
             ProgressManager.AddCoins(BonusWordCoins);
             ProgressManager.RecordBonusWord();
             UpdateCoinDisplay();
-
-            // Bonus flash on the wheel area
+            _sfxBonus?.Play();
             ShowToast($"Bonus: {word} (+{BonusWordCoins} coin)");
             return;
         }
 
-        // Invalid — wheel handles its own shake
+        // Invalid word
+        _sfxInvalid?.Play();
     }
 
     private void FillSlots(string word, List<Label> slots)
@@ -344,6 +384,8 @@ public partial class Main : Control
         ProgressManager.CurrentLevel = _currentLevelNumber + 1;
         ProgressManager.Save();
 
+        _sfxLevelComplete?.Play();
+
         // Show completion overlay
         int totalCoins = LevelCompleteCoins + (_foundBonusWords.Count * BonusWordCoins);
         _completeLabel.Text = $"Level {_currentLevelNumber} Complete!\n" +
@@ -359,6 +401,7 @@ public partial class Main : Control
     // ──────────────────────────────────────────────────────────
     private void OnNextPressed()
     {
+        _sfxButton?.Play();
         _completionOverlay.Visible = false;
         _letterWheel.SetEnabled(true);
         StartLevel(_currentLevelNumber + 1);
@@ -366,29 +409,8 @@ public partial class Main : Control
 
     private void OnMenuPressed()
     {
+        _sfxButton?.Play();
         GetTree().ChangeSceneToFile("res://scenes/LevelSelect.tscn");
-    }
-
-    // ──────────────────────────────────────────────────────────
-    // Pause / Resume
-    // ──────────────────────────────────────────────────────────
-    private void OnPausePressed()
-    {
-        // Only pause when a level is actively running
-        if (!_levelActive) return;
-
-        _levelActive = false;
-        _letterWheel.SetEnabled(false);
-        _pauseOverlay.Visible = true;
-        UpdatePowerUpButtons();
-    }
-
-    private void OnResumePressed()
-    {
-        _pauseOverlay.Visible = false;
-        _levelActive = true;
-        _letterWheel.SetEnabled(true);
-        UpdatePowerUpButtons();
     }
 
     // ──────────────────────────────────────────────────────────
@@ -417,6 +439,7 @@ public partial class Main : Control
         else
         {
             // Not enough coins — show ad dialog
+            _sfxInvalid?.Play();
             _adConfirmDialog.PopupCentered(new Vector2I(400, 200));
         }
     }
@@ -476,10 +499,7 @@ public partial class Main : Control
             slots[letterIndex].AddThemeStyleboxOverride("normal", style);
         }
 
-        // Play hint sound (if an AudioStreamPlayer named "HintSound" exists)
-        var hintSound = GetNodeOrNull<AudioStreamPlayer>("HintSound");
-        hintSound?.Play();
-
+        _sfxHint?.Play();
         UpdateCoinDisplay();
         ShowToast("Hint used!");
     }
@@ -494,6 +514,7 @@ public partial class Main : Control
             return;
         }
 
+        _sfxButton?.Play();
         UpdateCoinDisplay();
         _letterWheel.ShuffleLetters();
         ShowToast("Shuffled!");
@@ -519,6 +540,7 @@ public partial class Main : Control
 
             _foundWords.Add(word);
             FillSlots(word, slots);
+            _sfxWordFound?.Play();
             ShowToast($"Revealed: {word}");
             CheckCompletion();
             return;

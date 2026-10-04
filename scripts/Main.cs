@@ -113,12 +113,6 @@ public partial class Main : Control
         StartLevel(_currentLevelNumber);
     }
 
-    public override void _Process(double delta)
-    {
-        // Update power-up button states based on coin balance
-        UpdatePowerUpButtons();
-    }
-
     // ──────────────────────────────────────────────────────────
     // Level lifecycle
     // ──────────────────────────────────────────────────────────
@@ -159,6 +153,9 @@ public partial class Main : Control
         _revealedLetters.Clear();
         _levelStartTime = Time.GetUnixTimeFromSystem();
         _levelActive = true;
+
+        // Update button states now that _levelActive is set
+        UpdatePowerUpButtons();
     }
 
     // ──────────────────────────────────────────────────────────
@@ -267,11 +264,18 @@ public partial class Main : Control
 
     private void FillSlots(string word, List<Label> slots)
     {
+        // Check which indices were already hint-revealed for this word
+        _revealedLetters.TryGetValue(word, out var hintedIndices);
+
         for (int i = 0; i < word.Length; i++)
         {
             slots[i].Text = word[i].ToString();
             var style = (StyleBoxFlat)slots[i].GetThemeStylebox("normal").Duplicate();
-            style.BgColor = SlotFilled;
+            // Keep the hint colour for slots that were already hinted;
+            // use the normal filled colour for the rest.
+            style.BgColor = (hintedIndices != null && hintedIndices.Contains(i))
+                ? SlotHint
+                : SlotFilled;
             slots[i].AddThemeStyleboxOverride("normal", style);
         }
     }
@@ -323,7 +327,7 @@ public partial class Main : Control
         // Show completion overlay
         int totalCoins = LevelCompleteCoins + (_foundBonusWords.Count * BonusWordCoins);
         _completeLabel.Text = $"Level {_currentLevelNumber} Complete!\n" +
-                              $"+{LevelCompleteCoins} coins" +
+                              $"+{totalCoins} coins" +
                               (_foundBonusWords.Count > 0
                                   ? $"\n{_foundBonusWords.Count} bonus words found"
                                   : "");
@@ -490,6 +494,7 @@ public partial class Main : Control
     private void UpdateCoinDisplay()
     {
         _coinLabel.Text = $"🪙 {ProgressManager.Coins}";
+        UpdatePowerUpButtons();
     }
 
     private void ShowToast(string message)

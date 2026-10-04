@@ -24,6 +24,10 @@ public partial class Main : Control
     private Button _shuffleButton;
     private Button _revealButton;
 
+    // ── Pause button (top bar) and pause overlay ───────────
+    private Button _pauseButton;
+    private ColorRect _pauseOverlay;
+
     // ── Toast label for bonus/insufficient coins ───────────
     private Label _toastLabel;
 
@@ -99,6 +103,22 @@ public partial class Main : Control
         var menuBtn = _completionOverlay.GetNode<Button>("VBox/ButtonRow/MenuButton");
         nextBtn.Pressed += OnNextPressed;
         menuBtn.Pressed += OnMenuPressed;
+
+        // Pause button (top bar) and pause overlay
+        _pauseButton = GetNode<Button>("TopBar/PauseButton");
+        _pauseButton.Pressed += OnPausePressed;
+
+        _pauseOverlay = GetNode<ColorRect>("PauseOverlay");
+        _pauseOverlay.Visible = false;
+        var pausedLabel = _pauseOverlay.GetNode<Label>("VBox/PausedLabel");
+        pausedLabel.AddThemeFontSizeOverride("font_size", 56);
+        pausedLabel.AddThemeColorOverride("font_color", ThemeColor);
+        var resumeBtn = _pauseOverlay.GetNode<Button>("VBox/ResumeButton");
+        var pauseMenuBtn = _pauseOverlay.GetNode<Button>("VBox/MenuButton");
+        resumeBtn.AddThemeFontSizeOverride("font_size", 36);
+        pauseMenuBtn.AddThemeFontSizeOverride("font_size", 36);
+        resumeBtn.Pressed += OnResumePressed;
+        pauseMenuBtn.Pressed += OnMenuPressed;
 
         // Power-up signals
         _hintButton.Pressed += OnHintPressed;
@@ -347,6 +367,28 @@ public partial class Main : Control
     private void OnMenuPressed()
     {
         GetTree().ChangeSceneToFile("res://scenes/LevelSelect.tscn");
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // Pause / Resume
+    // ──────────────────────────────────────────────────────────
+    private void OnPausePressed()
+    {
+        // Only pause when a level is actively running
+        if (!_levelActive) return;
+
+        _levelActive = false;
+        _letterWheel.SetEnabled(false);
+        _pauseOverlay.Visible = true;
+        UpdatePowerUpButtons();
+    }
+
+    private void OnResumePressed()
+    {
+        _pauseOverlay.Visible = false;
+        _levelActive = true;
+        _letterWheel.SetEnabled(true);
+        UpdatePowerUpButtons();
     }
 
     // ──────────────────────────────────────────────────────────
